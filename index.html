@@ -2,6 +2,9 @@
 <html lang="fr" data-theme="light">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -521,6 +524,20 @@
       flex-shrink: 0;
     }
 
+    .dock-pace-chip {
+      border: 1px solid var(--primary);
+      background: var(--primary-soft);
+      color: var(--primary);
+      padding: 5px 9px;
+      border-radius: 7px;
+      font-size: 11px;
+      font-weight: 800;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
     .dock-pause-btn {
       border: 1px solid var(--border);
       background: var(--bg-subtle);
@@ -997,10 +1014,10 @@
       <div class="drawer-section">
         <span class="drawer-label">Rythme après validation d'une réponse</span>
         <div class="mode-grid" id="pace-grid">
-          <button class="mode-card active" data-pace="confort">⏱️ Confort (3,2s / 4,5s)</button>
-          <button class="mode-card" data-pace="long">🐢 Lent (5,5s / 7s)</button>
+          <button class="mode-card active" data-pace="confort">⏱️ Confort (5s / 6,5s)</button>
+          <button class="mode-card" data-pace="long">🐢 Lent (8s / 10s)</button>
           <button class="mode-card" data-pace="manuel">✋ Manuel (au clic)</button>
-          <button class="mode-card" data-pace="rapide">⚡ Rapide (1,6s)</button>
+          <button class="mode-card" data-pace="rapide">⚡ Rapide (2s / 3s)</button>
         </div>
       </div>
 
@@ -1159,7 +1176,7 @@
         if (praiseTimer) clearTimeout(praiseTimer);
         praiseTimer = setTimeout(() => {
           toast.classList.remove("show");
-        }, 2200);
+        }, 2400);
       }
 
       function spawnSvgSuccessBurst(pt) {
@@ -1247,8 +1264,41 @@
       // POST-VALIDATION TIMER & AUTO-PAUSE CONTROL
       // ==========================================
       let advanceTimer = null;
+      let advanceCountdownInterval = null;
       let timerBarAnim = null;
       const elTimerBar = document.getElementById("dock-timer-bar");
+
+      const PACE_LABELS = {
+        confort: "⏱️ Délai: 5s",
+        long: "🐢 Délai: 8s",
+        manuel: "✋ Manuel",
+        rapide: "⚡ Délai: 2s"
+      };
+      const PACE_ORDER = ["confort", "manuel", "long", "rapide"];
+
+      function getPaceShortLabel() {
+        return PACE_LABELS[state.advancePace] || PACE_LABELS.confort;
+      }
+
+      function syncPaceButtonsUI() {
+        document.querySelectorAll("#pace-grid [data-pace]").forEach(b => {
+          b.classList.toggle("active", b.getAttribute("data-pace") === state.advancePace);
+        });
+        const chip = document.getElementById("btn-cycle-pace");
+        if (chip) chip.textContent = getPaceShortLabel();
+      }
+
+      function cycleAdvancePace() {
+        const idx = PACE_ORDER.indexOf(state.advancePace);
+        state.advancePace = PACE_ORDER[(idx + 1) % PACE_ORDER.length];
+        try {
+          localStorage.setItem("anat_advance_pace", state.advancePace);
+        } catch (_) {}
+        syncPaceButtonsUI();
+        if (isQuestionValidated()) {
+          scheduleAdvance(state.lastAnswerCorrect);
+        }
+      }
 
       function isQuestionValidated() {
         return Boolean(state.qcmAnswered || state.pinAnswered || state.fcAnswered);
@@ -1258,6 +1308,10 @@
         if (advanceTimer) {
           clearTimeout(advanceTimer);
           advanceTimer = null;
+        }
+        if (advanceCountdownInterval) {
+          clearInterval(advanceCountdownInterval);
+          advanceCountdownInterval = null;
         }
         if (timerBarAnim) {
           timerBarAnim.cancel();
@@ -1276,6 +1330,10 @@
           clearTimeout(advanceTimer);
           advanceTimer = null;
         }
+        if (advanceCountdownInterval) {
+          clearInterval(advanceCountdownInterval);
+          advanceCountdownInterval = null;
+        }
         if (timerBarAnim) {
           timerBarAnim.cancel();
           timerBarAnim = null;
@@ -1289,6 +1347,10 @@
           btnPause.textContent = "⏸ Figé";
           btnPause.classList.add("paused");
         }
+        const btnNext = document.getElementById("btn-next-q");
+        if (btnNext) {
+          btnNext.textContent = "Suivant →";
+        }
       }
 
       function getAdvanceDelayMs(isCorrect) {
@@ -1296,27 +1358,42 @@
           case "manuel":
             return 0;
           case "long":
-            return isCorrect ? 5500 : 7000;
+            return isCorrect ? 8000 : 10000;
           case "rapide":
-            return isCorrect ? 1600 : 2400;
+            return isCorrect ? 2000 : 3000;
           case "confort":
           default:
-            return isCorrect ? 3200 : 4500;
+            return isCorrect ? 5000 : 6500;
         }
       }
 
       function scheduleAdvance(isCorrect) {
         clearAdvanceTimer();
         const delayMs = getAdvanceDelayMs(isCorrect);
+        const btnNext = document.getElementById("btn-next-q");
+        const btnPause = document.getElementById("btn-pause-advance");
+
         if (delayMs <= 0) {
           state.advancePaused = true;
-          const btnPause = document.getElementById("btn-pause-advance");
           if (btnPause) {
             btnPause.textContent = "✋ Manuel";
             btnPause.classList.add("paused");
           }
+          if (btnNext) {
+            btnNext.textContent = "Question suivante →";
+          }
           return;
         }
+
+        const deadline = Date.now() + delayMs;
+        const updateBtnCountdown = () => {
+          const b = document.getElementById("btn-next-q");
+          if (!b || state.advancePaused) return;
+          const remSec = Math.max(1, Math.ceil((deadline - Date.now()) / 1000));
+          b.textContent = `Suivant (${remSec}s) →`;
+        };
+        updateBtnCountdown();
+        advanceCountdownInterval = setInterval(updateBtnCountdown, 250);
 
         if (elTimerBar) {
           elTimerBar.classList.toggle("wrong", !isCorrect);
@@ -1330,6 +1407,10 @@
 
         advanceTimer = setTimeout(() => {
           advanceTimer = null;
+          if (advanceCountdownInterval) {
+            clearInterval(advanceCountdownInterval);
+            advanceCountdownInterval = null;
+          }
           advanceQuestion();
         }, delayMs);
       }
@@ -1734,10 +1815,7 @@
         const slice = getCurrentSlice();
         if (state.mode === "pin") {
           if (!state.currentTargetPointId) return;
-          if (state.pinAnswered) {
-            advanceQuestion();
-            return;
-          }
+          if (state.pinAnswered) return;
           state.scoreTotal++;
           if (ptId === state.currentTargetPointId) {
             state.pinAnswered = true;
@@ -1775,6 +1853,15 @@
         if (btnNext) {
           btnNext.addEventListener("click", () => {
             advanceQuestion();
+          });
+        }
+      }
+
+      function bindPaceChipButton() {
+        const btnPace = document.getElementById("btn-cycle-pace");
+        if (btnPace) {
+          btnPace.addEventListener("click", () => {
+            cycleAdvancePace();
           });
         }
       }
@@ -1817,23 +1904,22 @@
         if (state.mode === "qcm") {
           elDockInner.innerHTML = `
             <div class="dock-prompt-row" id="qcm-prompt-row">
-              <div class="dock-prompt-text" id="qcm-prompt-text">${catMeta.icon} Quelle est la structure pointée sur la planche ?</div>
+              <div class="dock-prompt-text" id="qcm-prompt-text">${catMeta.icon} Quelle est la structure pointée ?</div>
               <div class="dock-actions-group" id="qcm-actions-group">
+                <button class="dock-pace-chip" id="btn-cycle-pace" title="Changer le délai après validation">${getPaceShortLabel()}</button>
                 <button class="dock-skip-btn" id="btn-skip-q">Passer →</button>
               </div>
             </div>
             <div class="qcm-grid" id="qcm-grid"></div>
           `;
+          bindPaceChipButton();
           const grid = document.getElementById("qcm-grid");
           state.qcmOptions.forEach(optLabel => {
             const btn = document.createElement("button");
             btn.className = "qcm-btn";
             btn.textContent = optLabel;
             btn.addEventListener("click", () => {
-              if (state.qcmAnswered) {
-                advanceQuestion();
-                return;
-              }
+              if (state.qcmAnswered) return;
               state.qcmAnswered = true;
               const isCorrect = optLabel === targetPt.labelFr;
               state.scoreTotal++;
@@ -1888,12 +1974,16 @@
             elDockInner.innerHTML = `
               <div class="dock-prompt-row">
                 <div class="dock-prompt-text">${catMeta.icon} Devinez la structure pointée (${catMeta.label})</div>
-                <button class="dock-skip-btn" id="btn-skip-q">Passer →</button>
+                <div class="dock-actions-group">
+                  <button class="dock-pace-chip" id="btn-cycle-pace" title="Changer le délai après validation">${getPaceShortLabel()}</button>
+                  <button class="dock-skip-btn" id="btn-skip-q">Passer →</button>
+                </div>
               </div>
               <div class="flashcard-box" style="padding:6px;">
                 <button class="fc-btn reveal" id="btn-fc-reveal">👁️ Voir la réponse</button>
               </div>
             `;
+            bindPaceChipButton();
             document.getElementById("btn-fc-reveal").addEventListener("click", () => {
               state.flashcardRevealed = true;
               renderAll();
@@ -1953,9 +2043,13 @@
                   <div class="flashcard-la">🎯 Touchez ce point directement sur la planche :</div>
                   <div class="flashcard-fr" style="color:var(--primary)">${catMeta.icon} ${escapeHtml(targetPt.labelFr)}</div>
                 </div>
-                <button class="dock-skip-btn" id="btn-skip-q">Passer →</button>
+                <div class="dock-actions-group">
+                  <button class="dock-pace-chip" id="btn-cycle-pace" title="Changer le délai après validation">${getPaceShortLabel()}</button>
+                  <button class="dock-skip-btn" id="btn-skip-q">Passer →</button>
+                </div>
               </div>
             `;
+            bindPaceChipButton();
             document.getElementById("btn-skip-q").addEventListener("click", skipCurrentQuestion);
           } else {
             const isManual = state.advancePace === "manuel";
@@ -2139,6 +2233,7 @@
           try {
             localStorage.setItem("anat_advance_pace", state.advancePace);
           } catch (_) {}
+          syncPaceButtonsUI();
           if (isQuestionValidated()) {
             scheduleAdvance(state.lastAnswerCorrect);
           }
