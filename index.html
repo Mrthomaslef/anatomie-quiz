@@ -1641,6 +1641,18 @@
             (state.mode === "qcm" && state.qcmAnswered) ||
             (state.mode === "pin" && state.pinAnswered);
 
+          if (!showAnswerOnPlate) {
+            // Question non résolue : simple point d'interrogation discret près de la structure (pas d'encadré)
+            const qx = Math.min(sliceW - 12, tx + 15);
+            const qy = Math.max(12, ty - 15);
+            svgHtml += `
+              <circle class="target-pulse-ring" style="stroke:#2563eb" cx="${tx}" cy="${ty}" r="14" />
+              <g class="target-qmark" pointer-events="none">
+                <circle cx="${qx}" cy="${qy}" r="9" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
+                <text x="${qx}" y="${qy}" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-size="12" font-weight="800" font-family="system-ui, sans-serif">?</text>
+              </g>
+            `;
+          } else {
           const prefix = state.lastAnswerCorrect ? "✓ " : (state.lastAnswerWrong ? "✗ " : "");
           const mainText = showAnswerOnPlate
             ? `${prefix}${targetPt.labelFr}`
@@ -1714,6 +1726,7 @@
               ${tspansHtml}
             </g>
           `;
+          }
         }
 
         elSvg.innerHTML = svgHtml;
